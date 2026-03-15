@@ -228,6 +228,43 @@
         ::-webkit-scrollbar       { width: 5px; }
         ::-webkit-scrollbar-track { background: var(--bg); }
         ::-webkit-scrollbar-thumb { background: rgba(59,130,246,.25); border-radius: 3px; }
+
+        /* ── RESPONSIVE ─────────────────────────── */
+
+        /* Tablet (≤ 1024px) */
+        @media (max-width: 1024px) {
+            .kpi-grid { grid-template-columns: repeat(3, 1fr); }
+            .row2     { grid-template-columns: 1fr; }
+            .row3     { grid-template-columns: 1fr 1fr; }
+            .row4     { grid-template-columns: 1fr 1fr; }
+            .row3 > .card:last-child,
+            .row4 > .card:last-child { grid-column: 1 / -1; }
+        }
+
+        /* Mobile (≤ 640px) */
+        @media (max-width: 640px) {
+            .header { padding: 0 14px; height: auto; flex-wrap: wrap; gap: 8px; padding-top: 10px; padding-bottom: 10px; }
+            .nav    { display: none; }
+            .header-right { gap: 8px; }
+            .conn-status .conn-label { display: none; }
+            .main   { padding: 12px 14px; }
+
+            .kpi-grid { grid-template-columns: 1fr 1fr; gap: 10px; }
+            .kpi-card { padding: 12px 14px 10px; }
+            .kpi-value { font-size: 1.4rem; }
+
+            .row2, .row3, .row4 { grid-template-columns: 1fr; }
+            .row3 > .card:last-child,
+            .row4 > .card:last-child { grid-column: unset; }
+
+            .servo-grid { grid-template-columns: 1fr 1fr; }
+            .cnc-params { grid-template-columns: 1fr 1fr; }
+            .motor-stats { grid-template-columns: repeat(4, 1fr); }
+
+            .card { padding: 14px; }
+            .card-header { flex-wrap: wrap; gap: 8px; }
+            .tab-group { flex-wrap: wrap; }
+        }
     </style>
 </head>
 <body>
@@ -254,7 +291,7 @@
 
     <div class="header-right">
         <div class="alarm-badge"><div class="alarm-dot"></div><span id="alarm-count">3</span>&nbsp;ALARMS</div>
-        <div class="conn-status"><div class="conn-dot"></div>OPC-UA CONNECTED</div>
+        <div class="conn-status"><div class="conn-dot"></div><span class="conn-label">OPC-UA CONNECTED</span></div>
         <div class="clock" id="clock">--:--:--</div>
     </div>
 </header>
