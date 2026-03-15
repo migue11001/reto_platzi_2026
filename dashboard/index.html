@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCADA — Industrial IoT Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg: #080c18; --card: #111b2e; --border: rgba(59,130,246,0.15);
+            --text: #e8f0ff; --muted: #7a8da8;
+            --blue: #3b82f6; --cyan: #06b6d4; --green: #22c55e;
+            --yellow: #f59e0b; --red: #ef4444; --purple: #8b5cf6; --orange: #f97316;
+        }
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg);
+            background-image:
+                radial-gradient(ellipse at 15% 40%, rgba(59,130,246,0.04) 0%, transparent 55%),
+                radial-gradient(ellipse at 85% 15%, rgba(6,182,212,0.04) 0%, transparent 55%);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            font-size: 14px;
+        }
+
+        /* ── HEADER ─────────────────────────────── */
+        .header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 0 28px; height: 60px;
+            background: rgba(11,17,35,0.9); backdrop-filter: blur(12px);
+            border-bottom: 1px solid var(--border);
+            position: sticky; top: 0; z-index: 100;
+        }
+        .logo { display: flex; align-items: center; gap: 10px; }
+        .logo-icon {
+            width: 34px; height: 34px;
+            background: linear-gradient(135deg, var(--blue), var(--cyan));
+            border-radius: 8px; display: flex; align-items: center; justify-content: center;
+        }
+        .logo-icon svg { width: 18px; height: 18px; fill: #fff; }
+        .logo-text .name { font-size: 1rem; font-weight: 600; letter-spacing: .3px; }
+        .logo-text .sub  { font-size: 0.72rem; color: var(--muted); }
+        .nav { display: flex; gap: 4px; }
+        .nav-btn {
+            font-size: 0.82rem; color: var(--muted); cursor: pointer;
+            padding: 5px 12px; border-radius: 6px; border: none; background: none;
+            transition: color .2s, background .2s;
+        }
+        .nav-btn:hover, .nav-btn.active { color: var(--text); background: rgba(59,130,246,0.12); }
+        .nav-btn.active { color: var(--blue); }
+        .header-right { display: flex; align-items: center; gap: 14px; }
+        .alarm-badge {
+            display: flex; align-items: center; gap: 6px;
+            font-size: 0.75rem; padding: 4px 10px; border-radius: 20px;
+            border: 1px solid rgba(239,68,68,0.4); background: rgba(239,68,68,0.1);
+            color: var(--red); font-weight: 600;
+        }
+        .alarm-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); animation: blink 1s infinite; }
+        @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.2; } }
+        .conn-status { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: var(--green); font-weight: 500; }
+        .conn-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(34,197,94,.5); } 50% { box-shadow: 0 0 0 5px rgba(34,197,94,0); } }
+        .clock { font-size: 0.82rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+        /* ── MAIN ────────────────────────────────── */
+        .main { padding: 18px 28px; }
+
+        /* ── KPI STRIP ──────────────────────────── */
+        .kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 16px; }
+        .kpi-card {
+            background: var(--card); border: 1px solid var(--border);
+            border-radius: 12px; padding: 16px 18px 12px;
+            position: relative; overflow: hidden; transition: transform .2s, box-shadow .2s;
+        }
+        .kpi-card:hover { transform: translateY(-2px); box-shadow: 0 8px 28px rgba(59,130,246,.1); }
+        .kpi-card::before {
+            content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+            background: var(--accent, var(--blue));
+        }
+        .kpi-label { font-size: 0.65rem; color: var(--muted); text-transform: uppercase; letter-spacing: .9px; margin-bottom: 8px; }
+        .kpi-value { font-size: 1.75rem; font-weight: 700; line-height: 1; margin-bottom: 6px; font-variant-numeric: tabular-nums; }
+        .kpi-sub   { font-size: 0.72rem; color: var(--muted); }
+        .kpi-spark { position: absolute; bottom: 0; right: 0; opacity: 0.2; pointer-events: none; }
+
+        /* ── CARD BASE ──────────────────────────── */
+        .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+        .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .card-title { font-size: 0.88rem; font-weight: 600; }
+        .card-sub   { font-size: 0.7rem; color: var(--muted); }
+        .tab-group { display: flex; gap: 5px; }
+        .tab {
+            font-size: 0.67rem; padding: 3px 9px; border-radius: 20px;
+            border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; transition: all .2s;
+        }
+        .tab.active { border-color: var(--blue); background: rgba(59,130,246,.12); color: var(--blue); }
+
+        /* ── ROWS ───────────────────────────────── */
+        .row2 { display: grid; grid-template-columns: 3fr 2fr; gap: 14px; margin-bottom: 16px; }
+        .row3 { display: grid; grid-template-columns: 2fr 1.5fr 1.5fr; gap: 14px; margin-bottom: 16px; }
+        .row4 { display: grid; grid-template-columns: 2fr 1.5fr 1.5fr; gap: 14px; }
+
+        /* ── PLC ────────────────────────────────── */
+        .plc-section { margin-bottom: 10px; }
+        .plc-section-title { font-size: 0.63rem; color: var(--muted); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 7px; }
+        .io-grid { display: flex; gap: 5px; flex-wrap: wrap; }
+        .io-dot {
+            width: 24px; height: 24px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.48rem; color: rgba(255,255,255,.35);
+            background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+            transition: all .3s;
+        }
+        .io-dot.on {
+            background: rgba(34,197,94,.15); border-color: rgba(34,197,94,.4);
+            box-shadow: 0 0 8px rgba(34,197,94,.3); color: var(--green);
+        }
+        .io-dot.out.on {
+            background: rgba(59,130,246,.15); border-color: rgba(59,130,246,.4);
+            box-shadow: 0 0 8px rgba(59,130,246,.3); color: var(--blue);
+        }
+        .analog-bar-group { display: flex; flex-direction: column; gap: 7px; }
+        .analog-meta { display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 3px; }
+        .analog-name { color: var(--muted); }
+        .analog-val  { font-weight: 500; font-variant-numeric: tabular-nums; }
+        .bar-bg   { height: 4px; background: rgba(255,255,255,.07); border-radius: 4px; overflow: hidden; }
+        .bar-fill { height: 100%; border-radius: 4px; transition: width .8s ease; }
+        .plc-info { display: flex; gap: 10px; flex-wrap: wrap; font-size: 0.68rem; color: var(--muted); padding-top: 8px; border-top: 1px solid var(--border); }
+        .plc-info span { color: var(--text); }
+
+        /* ── STATUS BADGES ──────────────────────── */
+        .badge-pill {
+            display: inline-block; font-size: 0.58rem; padding: 2px 7px;
+            border-radius: 10px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase;
+        }
+        .badge-run  { background: rgba(34,197,94,.15);  color: var(--green);  border: 1px solid rgba(34,197,94,.3); }
+        .badge-warn { background: rgba(245,158,11,.15); color: var(--yellow); border: 1px solid rgba(245,158,11,.3); }
+        .badge-idle { background: rgba(59,130,246,.15); color: var(--blue);   border: 1px solid rgba(59,130,246,.3); }
+        .badge-stop { background: rgba(239,68,68,.15);  color: var(--red);    border: 1px solid rgba(239,68,68,.3); }
+
+        /* ── SERVO GAUGES ───────────────────────── */
+        .servo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .servo-gauge-wrap {
+            display: flex; flex-direction: column; align-items: center;
+            background: rgba(255,255,255,.03); border: 1px solid var(--border);
+            border-radius: 10px; padding: 10px 8px 8px;
+        }
+        .servo-name  { font-size: 0.62rem; font-weight: 600; color: var(--muted); letter-spacing: .5px; margin-bottom: 3px; }
+        .servo-rpm   { font-size: 1rem; font-weight: 700; font-variant-numeric: tabular-nums; margin-top: 2px; }
+        .servo-stats { display: flex; gap: 8px; font-size: 0.6rem; color: var(--muted); margin-top: 5px; }
+        .servo-stats span { color: var(--text); }
+
+        /* ── CNC ────────────────────────────────── */
+        .cnc-axes { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+        .cnc-axis {
+            display: flex; align-items: center; justify-content: space-between;
+            background: rgba(0,0,0,.35); border-radius: 6px; padding: 6px 10px;
+        }
+        .axis-label { font-size: 0.8rem; font-weight: 700; width: 18px; }
+        .axis-val   { font-family: 'Share Tech Mono', monospace; font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+        .axis-x { color: var(--red); } .axis-y { color: var(--green); } .axis-z { color: var(--blue); }
+        .cnc-params { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 10px; }
+        .cnc-param {
+            background: rgba(255,255,255,.03); border: 1px solid var(--border);
+            border-radius: 7px; padding: 7px 10px;
+        }
+        .cnc-param-label { font-size: 0.58rem; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 2px; }
+        .cnc-param-val   { font-size: 0.95rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .tool-wear-meta { display: flex; justify-content: space-between; font-size: 0.7rem; margin-bottom: 4px; }
+        .tool-wear-bg   { height: 5px; background: rgba(255,255,255,.07); border-radius: 4px; overflow: hidden; }
+        .tool-wear-fill { height: 100%; border-radius: 4px; transition: width 1s ease, background .5s; }
+        .cnc-prog { font-size: 0.68rem; color: var(--muted); border-top: 1px solid var(--border); padding-top: 7px; margin-top: 8px; }
+        .cnc-prog span { color: var(--cyan); font-family: 'Share Tech Mono', monospace; }
+
+        /* ── DRIVE MOTORS ───────────────────────── */
+        .motors-list { display: flex; flex-direction: column; gap: 9px; }
+        .motor-card {
+            background: rgba(255,255,255,.03); border: 1px solid var(--border);
+            border-radius: 8px; padding: 9px 12px;
+        }
+        .motor-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 7px; }
+        .motor-name   { font-size: 0.75rem; font-weight: 600; }
+        .motor-bar-bg   { height: 4px; background: rgba(255,255,255,.07); border-radius: 4px; overflow: hidden; margin-bottom: 7px; }
+        .motor-bar-fill { height: 100%; border-radius: 4px; background: var(--cyan); transition: width .8s ease; }
+        .motor-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+        .motor-stat  { text-align: center; }
+        .motor-stat-val { font-size: 0.72rem; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .motor-stat-lbl { font-size: 0.56rem; color: var(--muted); text-transform: uppercase; }
+
+        /* ── DEVICE STATUS GRID ─────────────────── */
+        .dev-status-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(28px, 1fr)); gap: 5px;
+        }
+        .dev-sq {
+            aspect-ratio: 1; border-radius: 5px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 0.48rem; font-weight: 700; cursor: default; transition: all .3s;
+            border: 1px solid transparent;
+        }
+        .dev-sq.online  { background: rgba(34,197,94,.15); border-color: rgba(34,197,94,.3);  color: var(--green);  box-shadow: 0 0 5px rgba(34,197,94,.15); }
+        .dev-sq.offline { background: rgba(239,68,68,.1);  border-color: rgba(239,68,68,.2);  color: var(--red); }
+        .dev-sq.warn    { background: rgba(245,158,11,.12);border-color: rgba(245,158,11,.3); color: var(--yellow); }
+        .dev-legend { display: flex; gap: 10px; font-size: 0.63rem; margin-top: 9px; color: var(--muted); flex-wrap: wrap; }
+        .dev-legend-item { display: flex; align-items: center; gap: 4px; }
+        .dev-legend-sq   { width: 8px; height: 8px; border-radius: 2px; }
+
+        /* ── EVENT LOG ──────────────────────────── */
+        .event-log { display: flex; flex-direction: column; overflow: hidden; max-height: 195px; }
+        .event-item {
+            display: grid; grid-template-columns: 18px 1fr auto;
+            align-items: start; gap: 7px;
+            padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.04);
+            font-size: 0.72rem; animation: slideIn .3s ease;
+        }
+        .event-item:last-child { border-bottom: none; }
+        @keyframes slideIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+        .event-icon { font-size: 0.75rem; margin-top: 1px; }
+        .event-msg  { color: var(--text); line-height: 1.35; }
+        .event-src  { font-size: 0.6rem; color: var(--muted); margin-top: 1px; }
+        .event-time { font-size: 0.61rem; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+        .ev-alarm { color: var(--red); }
+        .ev-warn  { color: var(--yellow); }
+        .ev-info  { color: var(--cyan); }
+        .ev-ok    { color: var(--green); }
+
+        /* ── SCROLLBAR ──────────────────────────── */
+        ::-webkit-scrollbar       { width: 5px; }
+        ::-webkit-scrollbar-track { background: var(--bg); }
+        ::-webkit-scrollbar-thumb { background: rgba(59,130,246,.25); border-radius: 3px; }
+    </style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+    <div class="logo">
+        <div class="logo-icon">
+            <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z"/></svg>
+        </div>
+        <div class="logo-text">
+            <div class="name">SCADA IIoT</div>
+            <div class="sub">Industrial Control &amp; Monitoring</div>
+        </div>
+    </div>
+
+    <nav class="nav">
+        <button class="nav-btn active">Overview</button>
+        <button class="nav-btn">Machines</button>
+        <button class="nav-btn">Alarms</button>
+        <button class="nav-btn">Trends</button>
+        <button class="nav-btn">Config</button>
+    </nav>
+
+    <div class="header-right">
+        <div class="alarm-badge"><div class="alarm-dot"></div><span id="alarm-count">3</span>&nbsp;ALARMS</div>
+        <div class="conn-status"><div class="conn-dot"></div>OPC-UA CONNECTED</div>
+        <div class="clock" id="clock">--:--:--</div>
+    </div>
+</header>
+
+<!-- MAIN -->
+<main class="main">
+
+    <!-- KPI STRIP -->
+    <div class="kpi-grid">
+        <div class="kpi-card" style="--accent:#22c55e">
+            <div class="kpi-label">Devices Online</div>
+            <div class="kpi-value">24<span style="font-size:.9rem;opacity:.45">/26</span></div>
+            <div class="kpi-sub">2 offline</div>
+            <canvas class="kpi-spark" id="sp-online" width="90" height="45"></canvas>
+        </div>
+        <div class="kpi-card" style="--accent:#06b6d4">
+            <div class="kpi-label">Data Rate</div>
+            <div class="kpi-value" id="kv-rate">—</div>
+            <div class="kpi-sub">pts / sec</div>
+            <canvas class="kpi-spark" id="sp-rate" width="90" height="45"></canvas>
+        </div>
+        <div class="kpi-card" style="--accent:#ef4444">
+            <div class="kpi-label">Active Alarms</div>
+            <div class="kpi-value" id="kv-alarms">3</div>
+            <div class="kpi-sub" id="kv-alarms-sub">2 warning, 1 critical</div>
+            <canvas class="kpi-spark" id="sp-alarms" width="90" height="45"></canvas>
+        </div>
+        <div class="kpi-card" style="--accent:#8b5cf6">
+            <div class="kpi-label">System Uptime</div>
+            <div class="kpi-value">99.7%</div>
+            <div class="kpi-sub">14d 7h 22m</div>
+        </div>
+        <div class="kpi-card" style="--accent:#f97316">
+            <div class="kpi-label">OPC Latency</div>
+            <div class="kpi-value" id="kv-latency">—</div>
+            <div class="kpi-sub">ms avg</div>
+            <canvas class="kpi-spark" id="sp-latency" width="90" height="45"></canvas>
+        </div>
+    </div>
+
+    <!-- ROW 2 -->
+    <div class="row2">
+        <!-- Production Metrics -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">Production Metrics</div>
+                    <div class="card-sub">CNC-07 — rolling 30 pts, 2 s interval</div>
+                </div>
+                <div class="tab-group" id="prod-tabs">
+                    <button class="tab active" onclick="switchProd('spindle',this)">Spindle RPM</button>
+                    <button class="tab" onclick="switchProd('current',this)">Current A</button>
+                    <button class="tab" onclick="switchProd('temp',this)">Temp °C</button>
+                    <button class="tab" onclick="switchProd('feed',this)">Feed mm/min</button>
+                </div>
+            </div>
+            <div style="position:relative;height:230px;">
+                <canvas id="prodChart"></canvas>
+            </div>
+        </div>
+
+        <!-- PLC S7-1500 -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">PLC Siemens S7-1500</div>
+                    <div class="card-sub">CPU 1515-2 PN</div>
+                </div>
+                <span class="badge-pill badge-run">RUN</span>
+            </div>
+            <div class="plc-section">
+                <div class="plc-section-title">Digital Inputs (DI 0–7)</div>
+                <div class="io-grid" id="di-grid"></div>
+            </div>
+            <div class="plc-section">
+                <div class="plc-section-title">Digital Outputs (DO 0–7)</div>
+                <div class="io-grid" id="do-grid"></div>
+            </div>
+            <div class="plc-section">
+                <div class="plc-section-title">Analog Inputs</div>
+                <div class="analog-bar-group" id="analog-bars"></div>
+            </div>
+            <div class="plc-info">
+                Scan: <span id="plc-scan">4.2 ms</span> &nbsp;|&nbsp;
+                Prog: <span>Main_OB1</span> &nbsp;|&nbsp;
+                Mode: <span style="color:var(--green)">RUN</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ROW 3 -->
+    <div class="row3">
+        <!-- Servomotors -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Servomotors</div>
+                <div class="card-sub">4-axis drive system</div>
+            </div>
+            <div class="servo-grid" id="servo-grid"></div>
+        </div>
+
+        <!-- CNC-07 -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">CNC-07</div>
+                    <div class="card-sub">Mazak Variaxis i-500</div>
+                </div>
+                <span class="badge-pill badge-run" id="cnc-badge">CYCLE</span>
+            </div>
+            <div class="cnc-axes">
+                <div class="cnc-axis">
+                    <span class="axis-label axis-x">X</span>
+                    <span class="axis-val axis-x" id="cnc-x">+000.000</span>
+                    <span style="font-size:.58rem;color:var(--muted)">mm</span>
+                </div>
+                <div class="cnc-axis">
+                    <span class="axis-label axis-y">Y</span>
+                    <span class="axis-val axis-y" id="cnc-y">+000.000</span>
+                    <span style="font-size:.58rem;color:var(--muted)">mm</span>
+                </div>
+                <div class="cnc-axis">
+                    <span class="axis-label axis-z">Z</span>
+                    <span class="axis-val axis-z" id="cnc-z">+000.000</span>
+                    <span style="font-size:.58rem;color:var(--muted)">mm</span>
+                </div>
+            </div>
+            <div class="cnc-params">
+                <div class="cnc-param">
+                    <div class="cnc-param-label">Spindle</div>
+                    <div class="cnc-param-val" id="cnc-spindle">—</div>
+                </div>
+                <div class="cnc-param">
+                    <div class="cnc-param-label">Feed Rate</div>
+                    <div class="cnc-param-val" id="cnc-feed">—</div>
+                </div>
+                <div class="cnc-param">
+                    <div class="cnc-param-label">Override</div>
+                    <div class="cnc-param-val" id="cnc-override">—</div>
+                </div>
+                <div class="cnc-param">
+                    <div class="cnc-param-label">Cycle Time</div>
+                    <div class="cnc-param-val" id="cnc-cycle">—</div>
+                </div>
+            </div>
+            <div>
+                <div class="tool-wear-meta">
+                    <span style="color:var(--muted);font-size:.68rem">Tool <span id="cnc-tool-num">#T05</span> Wear</span>
+                    <span id="cnc-tool-pct" style="font-size:.68rem;font-weight:600">—</span>
+                </div>
+                <div class="tool-wear-bg">
+                    <div class="tool-wear-fill" id="cnc-tool-bar" style="width:0%"></div>
+                </div>
+            </div>
+            <div class="cnc-prog">
+                Prog: <span id="cnc-prog">O0042</span> &nbsp; Line: <span id="cnc-line">N0001</span>
+            </div>
+        </div>
+
+        <!-- Drive Motors -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Drive Motors</div>
+                <div class="card-sub">3-phase AC inverter</div>
+            </div>
+            <div class="motors-list" id="motors-list"></div>
+        </div>
+    </div>
+
+    <!-- ROW 4 -->
+    <div class="row4">
+        <!-- IoT Extraction Rate -->
+        <div class="card">
+            <div class="card-header">
+                <div>
+                    <div class="card-title">IoT Extraction Rate</div>
+                    <div class="card-sub">Data pipeline telemetry</div>
+                </div>
+                <div style="display:flex;gap:14px;font-size:.68rem;">
+                    <div style="display:flex;align-items:center;gap:5px;color:var(--muted)">
+                        <div style="width:18px;height:2px;background:var(--cyan);border-radius:2px"></div>OPC-UA
+                    </div>
+                    <div style="display:flex;align-items:center;gap:5px;color:var(--muted)">
+                        <div style="width:18px;height:0;border-top:2px dashed var(--purple)"></div>MQTT
+                    </div>
+                </div>
+            </div>
+            <div style="position:relative;height:160px;">
+                <canvas id="iotChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Device Status Grid -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Device Status</div>
+                <div class="card-sub">24 online / 26 total</div>
+            </div>
+            <div class="dev-status-grid" id="dev-grid"></div>
+            <div class="dev-legend">
+                <div class="dev-legend-item"><div class="dev-legend-sq" style="background:var(--green)"></div>Online</div>
+                <div class="dev-legend-item"><div class="dev-legend-sq" style="background:var(--yellow)"></div>Warning</div>
+                <div class="dev-legend-item"><div class="dev-legend-sq" style="background:var(--red)"></div>Offline</div>
+            </div>
+        </div>
+
+        <!-- Event Log -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">Event Log</div>
+                <div class="conn-status" style="font-size:.7rem;">
+                    <div class="conn-dot" style="width:5px;height:5px"></div>LIVE
+                </div>
+            </div>
+            <div class="event-log" id="event-log"></div>
+        </div>
+    </div>
+
+</main>
+
+<script>
+// ── CONSTANTS ──────────────────────────────────────────────
+const C = {
+    blue:'#3b82f6', cyan:'#06b6d4', purple:'#8b5cf6',
+    green:'#22c55e', yellow:'#f59e0b', red:'#ef4444', orange:'#f97316',
+    grid:'rgba(255,255,255,0.05)', tick:'#7a8da8',
+};
+const TT = {
+    backgroundColor:'#111b2e', borderColor:'rgba(59,130,246,.3)', borderWidth:1,
+    titleColor:'#e8f0ff', bodyColor:'#7a8da8', padding:10,
+};
+
+// ── HELPERS ────────────────────────────────────────────────
+function rnd(a, b)      { return a + Math.random() * (b - a); }
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function ts() {
+    const n = new Date();
+    return [n.getHours(), n.getMinutes(), n.getSeconds()]
+        .map(v => String(v).padStart(2,'0')).join(':');
+}
+
+// ── CLOCK ─────────────────────────────────────────────────
+const clockEl = document.getElementById('clock');
+function updateClock() { clockEl.textContent = ts(); }
+setInterval(updateClock, 1000);
+updateClock();
+
+// ── SPARKLINES ────────────────────────────────────────────
+function mkSpark(id, color) {
+    const canvas = document.getElementById(id);
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    const data = Array.from({length:14}, () => 0);
+    return { ctx, data, color };
+}
+const SPARKS = {
+    rate:    mkSpark('sp-rate',    C.cyan),
+    alarms:  mkSpark('sp-alarms',  C.red),
+    latency: mkSpark('sp-latency', C.orange),
+    online:  mkSpark('sp-online',  C.green),
+};
+function drawSpark(s, val) {
+    if (!s) return;
+    s.data.push(val);
+    if (s.data.length > 14) s.data.shift();
+    const {ctx, data, color} = s;
+    const w = ctx.canvas.width, h = ctx.canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const mn = Math.min(...data), range = (Math.max(...data) - mn) || 1;
+    const ny = v => h - ((v - mn) / range) * (h - 4) - 2;
+    ctx.beginPath();
+    data.forEach((v, i) => {
+        const x = (i / (data.length - 1)) * w;
+        i === 0 ? ctx.moveTo(x, ny(v)) : ctx.lineTo(x, ny(v));
+    });
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+    ctx.fillStyle = color + '33'; ctx.fill();
+}
+
+// ── KPI STATE ─────────────────────────────────────────────
+const kpi = { rate: 1240, alarms: 3, latency: 12 };
+function updateKPIs() {
+    kpi.rate    = clamp(kpi.rate    + rnd(-100, 100), 300, 2500);
+    kpi.latency = clamp(kpi.latency + rnd(-2, 2.5),   3, 45);
+    document.getElementById('kv-rate').textContent    = Math.round(kpi.rate).toLocaleString();
+    document.getElementById('kv-latency').textContent = kpi.latency.toFixed(1);
+    drawSpark(SPARKS.rate,    kpi.rate);
+    drawSpark(SPARKS.latency, kpi.latency);
+    drawSpark(SPARKS.online,  24);
+    drawSpark(SPARKS.alarms,  kpi.alarms);
+}
+
+// ── PRODUCTION CHART ─────────────────────────────────────
+const PROD_MODES = {
+    spindle: { color: C.blue,   label: 'Spindle RPM',    base: 3200, amp: 500  },
+    current: { color: C.cyan,   label: 'Current (A)',    base: 18,   amp: 6    },
+    temp:    { color: C.orange, label: 'Temperature °C', base: 62,   amp: 12   },
+    feed:    { color: C.green,  label: 'Feed Rate mm/min', base: 850, amp: 200 },
+};
+let prodMode = 'spindle';
+const prodData   = { spindle:[], current:[], temp:[], feed:[] };
+const prodLabels = [];
+for (let i = 29; i >= 0; i--) {
+    const t = new Date(Date.now() - i * 2000);
+    prodLabels.push([t.getHours(), t.getMinutes(), t.getSeconds()].map(v => String(v).padStart(2,'0')).join(':'));
+    Object.keys(PROD_MODES).forEach(k => {
+        const m = PROD_MODES[k];
+        prodData[k].push(m.base + rnd(-m.amp, m.amp));
+    });
+}
+const pCtx = document.getElementById('prodChart').getContext('2d');
+function mkGrad(color) {
+    const g = pCtx.createLinearGradient(0, 0, 0, 230);
+    g.addColorStop(0, color + '55'); g.addColorStop(1, color + '00'); return g;
+}
+const prodChart = new Chart(pCtx, {
+    type: 'line',
+    data: {
+        labels: [...prodLabels],
+        datasets: [{
+            label: 'Spindle RPM', data: [...prodData.spindle],
+            borderColor: C.blue, backgroundColor: mkGrad(C.blue),
+            borderWidth: 2, fill: true, tension: 0.3,
+            pointRadius: 2, pointBackgroundColor: C.blue, pointBorderColor: '#111b2e',
+        }]
+    },
+    options: {
+        responsive: true, maintainAspectRatio: false, animation: { duration: 300 },
+        plugins: { legend: { display: false }, tooltip: TT },
+        scales: {
+            x: { grid:{color:C.grid}, ticks:{color:C.tick,font:{size:10},maxTicksLimit:6}, border:{color:'transparent'} },
+            y: { grid:{color:C.grid}, ticks:{color:C.tick,font:{size:10}},                border:{color:'transparent'} },
+        }
+    }
+});
+function switchProd(mode, btn) {
+    prodMode = mode;
+    document.querySelectorAll('#prod-tabs .tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const m = PROD_MODES[mode];
+    prodChart.data.labels                                = [...prodLabels];
+    prodChart.data.datasets[0].data                     = [...prodData[mode]];
+    prodChart.data.datasets[0].borderColor               = m.color;
+    prodChart.data.datasets[0].backgroundColor           = mkGrad(m.color);
+    prodChart.data.datasets[0].pointBackgroundColor      = m.color;
+    prodChart.data.datasets[0].label                     = m.label;
+    prodChart.update();
+}
+function pushProdPoint() {
+    const now = new Date();
+    prodLabels.push([now.getHours(), now.getMinutes(), now.getSeconds()].map(v => String(v).padStart(2,'0')).join(':'));
+    if (prodLabels.length > 30) prodLabels.shift();
+    Object.keys(PROD_MODES).forEach(k => {
+        const m = PROD_MODES[k];
+        const last = prodData[k][prodData[k].length - 1];
+        prodData[k].push(clamp(last + rnd(-m.amp * 0.3, m.amp * 0.3), m.base - m.amp, m.base + m.amp));
+        if (prodData[k].length > 30) prodData[k].shift();
+    });
+    prodChart.data.labels            = [...prodLabels];
+    prodChart.data.datasets[0].data  = [...prodData[prodMode]];
+    prodChart.update('none');
+}
+
+// ── PLC ───────────────────────────────────────────────────
+const plcDI = [1,0,1,1,0,1,0,1];
+const plcDO = [1,1,0,1,0,0,1,1];
+const analogInputs = [
+    { name:'Presión', unit:'bar',  val:4.2, min:0, max:10,  color:C.blue   },
+    { name:'Caudal',  unit:'L/min',val:23,  min:0, max:60,  color:C.cyan   },
+    { name:'Temp',    unit:'°C',   val:68,  min:0, max:120, color:C.orange },
+    { name:'Vibrac.', unit:'mm/s', val:1.8, min:0, max:8,   color:C.purple },
+];
+function buildPLC() {
+    const diG = document.getElementById('di-grid');
+    const doG = document.getElementById('do-grid');
+    plcDI.forEach((v, i) => diG.insertAdjacentHTML('beforeend',
+        `<div class="io-dot${v?' on':''}" id="di-${i}" title="DI ${i}">I${i}</div>`));
+    plcDO.forEach((v, i) => doG.insertAdjacentHTML('beforeend',
+        `<div class="io-dot out${v?' on':''}" id="do-${i}" title="DO ${i}">Q${i}</div>`));
+    const aEl = document.getElementById('analog-bars');
+    analogInputs.forEach((a, i) => {
+        const pct = ((a.val - a.min) / (a.max - a.min)) * 100;
+        aEl.insertAdjacentHTML('beforeend', `
+            <div>
+                <div class="analog-meta">
+                    <span class="analog-name">${a.name}</span>
+                    <span class="analog-val" id="av-${i}" style="color:${a.color}">${a.val.toFixed(1)} ${a.unit}</span>
+                </div>
+                <div class="bar-bg"><div class="bar-fill" id="ab-${i}" style="width:${pct}%;background:${a.color}"></div></div>
+            </div>`);
+    });
+}
+let plcTick = 0;
+function updatePLC() {
+    plcTick++;
+    if (plcTick % 4 === 0) {
+        const di = Math.floor(Math.random() * 8); plcDI[di] ^= 1;
+        document.getElementById(`di-${di}`).classList.toggle('on', plcDI[di] === 1);
+        const dq = Math.floor(Math.random() * 8); plcDO[dq] ^= 1;
+        document.getElementById(`do-${dq}`).classList.toggle('on', plcDO[dq] === 1);
+    }
+    analogInputs.forEach((a, i) => {
+        a.val = clamp(a.val + rnd(-1, 1) * (a.max - a.min) * 0.025, a.min, a.max);
+        const pct = ((a.val - a.min) / (a.max - a.min)) * 100;
+        document.getElementById(`av-${i}`).textContent = `${a.val.toFixed(1)} ${a.unit}`;
+        document.getElementById(`ab-${i}`).style.width = pct + '%';
+    });
+    document.getElementById('plc-scan').textContent = (3.8 + rnd(0, 1.4)).toFixed(1) + ' ms';
+}
+
+// ── SERVO GAUGES ─────────────────────────────────────────
+const SERVOS = [
+    { id:'srv01', name:'SRV-01 Eje X',   rpm:2400, rpmMax:3000, pos:45.2,  torque:18.5, temp:52, status:'RUN'  },
+    { id:'srv02', name:'SRV-02 Eje Y',   rpm:1850, rpmMax:3000, pos:12.7,  torque:14.2, temp:48, status:'RUN'  },
+    { id:'srv03', name:'SRV-03 Eje Z',   rpm: 620, rpmMax:3000, pos:180.0, torque: 9.8, temp:74, status:'WARN' },
+    { id:'srv04', name:'SRV-04 Rotario', rpm:   0, rpmMax:3000, pos:270.0, torque: 0.0, temp:38, status:'IDLE' },
+];
+function buildServos() {
+    const grid = document.getElementById('servo-grid');
+    SERVOS.forEach(s => grid.insertAdjacentHTML('beforeend', `
+        <div class="servo-gauge-wrap">
+            <div class="servo-name">${s.name}</div>
+            <canvas id="gauge-${s.id}" width="100" height="62"></canvas>
+            <div class="servo-rpm" id="rpm-${s.id}">— RPM</div>
+            <div style="margin-top:3px"><span class="badge-pill badge-${s.status.toLowerCase()}" id="sbadge-${s.id}">${s.status}</span></div>
+            <div class="servo-stats">
+                Pos <span id="pos-${s.id}">—</span>° &nbsp;
+                Tq <span id="tq-${s.id}">—</span>Nm &nbsp;
+                <span id="tmp-${s.id}">—°C</span>
+            </div>
+        </div>`));
+}
+function drawGauge(canvas, val, max, color) {
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width, h = canvas.height;
+    ctx.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h * 0.92, r = Math.min(w * 0.44, h * 0.85);
+    const startA = Math.PI, sweepA = Math.PI * 1.5;
+    // track
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, startA, startA + sweepA, false);
+    ctx.strokeStyle = 'rgba(255,255,255,.08)';
+    ctx.lineWidth = 7; ctx.lineCap = 'round'; ctx.stroke();
+    // fill
+    if (val > 0) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, startA, startA + sweepA * (val / max), false);
+        ctx.strokeStyle = color; ctx.lineWidth = 7; ctx.lineCap = 'round';
+        ctx.shadowColor = color; ctx.shadowBlur = 10; ctx.stroke();
+        ctx.shadowBlur = 0;
+    }
+}
+function updateServos() {
+    SERVOS.forEach(s => {
+        if (s.status !== 'IDLE') {
+            s.rpm    = clamp(s.rpm    + rnd(-150, 150), 0, s.rpmMax);
+            s.torque = clamp(s.torque + rnd(-1.5, 1.5), 0, 50);
+            s.temp   = clamp(s.temp   + rnd(-0.6, 0.7), 30, 95);
+            s.pos    = (s.pos + rnd(0.1, 2.5)) % 360;
+        }
+        if (s.temp > 70 && s.status === 'RUN')  s.status = 'WARN';
+        if (s.temp <= 70 && s.status === 'WARN') s.status = 'RUN';
+        const color = s.status === 'WARN' ? C.yellow : s.status === 'IDLE' ? C.blue : C.green;
+        drawGauge(document.getElementById(`gauge-${s.id}`), s.rpm, s.rpmMax, color);
+        const rpmEl = document.getElementById(`rpm-${s.id}`);
+        rpmEl.textContent = Math.round(s.rpm).toLocaleString() + ' RPM';
+        rpmEl.style.color = color;
+        const b = document.getElementById(`sbadge-${s.id}`);
+        b.className = `badge-pill badge-${s.status.toLowerCase()}`;
+        b.textContent = s.status;
+        document.getElementById(`pos-${s.id}`).textContent  = s.pos.toFixed(1);
+        document.getElementById(`tq-${s.id}`).textContent   = s.torque.toFixed(1);
+        const tEl = document.getElementById(`tmp-${s.id}`);
+        tEl.textContent = s.temp.toFixed(0) + '°C';
+        tEl.style.color = s.temp > 70 ? C.yellow : '#7a8da8';
+    });
+}
+
+// ── CNC-07 ────────────────────────────────────────────────
+const cnc = { x:-124.562, y:89.340, z:-45.000, spindle:3200, feed:850, override:100, cycleRem:847, toolWear:42, line:1 };
+function fmtCoord(v) {
+    const sign = v >= 0 ? '+' : '-';
+    return sign + Math.abs(v).toFixed(3).padStart(7, '0');
+}
+function updateCNC() {
+    cnc.x += rnd(-0.6, 0.6); cnc.y += rnd(-0.6, 0.6); cnc.z += rnd(-0.4, 0.4);
+    cnc.spindle  = clamp(cnc.spindle  + rnd(-90, 90),  2000, 4500);
+    cnc.feed     = clamp(cnc.feed     + rnd(-60, 60),   200, 1500);
+    cnc.override = clamp(cnc.override + rnd(-2, 2),      50, 120);
+    cnc.cycleRem = Math.max(0, cnc.cycleRem - 2);
+    cnc.line    += Math.floor(rnd(1, 5));
+    cnc.toolWear = clamp(cnc.toolWear + 0.025, 0, 100);
+    document.getElementById('cnc-x').textContent = fmtCoord(cnc.x);
+    document.getElementById('cnc-y').textContent = fmtCoord(cnc.y);
+    document.getElementById('cnc-z').textContent = fmtCoord(cnc.z);
+    document.getElementById('cnc-spindle').textContent  = Math.round(cnc.spindle).toLocaleString() + ' rpm';
+    document.getElementById('cnc-feed').textContent     = Math.round(cnc.feed) + ' mm/min';
+    document.getElementById('cnc-override').textContent = Math.round(cnc.override) + '%';
+    const r = cnc.cycleRem;
+    document.getElementById('cnc-cycle').textContent    = `${Math.floor(r/60)}:${String(r%60).padStart(2,'0')}`;
+    const w = cnc.toolWear;
+    document.getElementById('cnc-tool-pct').textContent = w.toFixed(1) + '%';
+    const bar = document.getElementById('cnc-tool-bar');
+    bar.style.width      = w + '%';
+    bar.style.background = w > 80 ? C.red : w > 50 ? C.yellow : C.green;
+    document.getElementById('cnc-line').textContent = 'N' + String(cnc.line).padStart(4,'0');
+}
+
+// ── DRIVE MOTORS ─────────────────────────────────────────
+const MOTORS = [
+    { id:'mot01', name:'MOT-01 Husillo',      rpm:1450, rpmMax:1800, cur:12.4, volt:400, temp:58, pwr:7.2, status:'RUN'  },
+    { id:'mot02', name:'MOT-02 Avance',       rpm: 920, rpmMax:1500, cur: 8.1, volt:400, temp:45, pwr:4.1, status:'RUN'  },
+    { id:'mot03', name:'MOT-03 Refrigerante', rpm:   0, rpmMax:1200, cur: 0.0, volt:400, temp:28, pwr:0.0, status:'STOP' },
+];
+function buildMotors() {
+    const list = document.getElementById('motors-list');
+    MOTORS.forEach(m => {
+        const pct = (m.rpm / m.rpmMax) * 100;
+        list.insertAdjacentHTML('beforeend', `
+            <div class="motor-card">
+                <div class="motor-header">
+                    <span class="motor-name">${m.name}</span>
+                    <div style="display:flex;align-items:center;gap:7px">
+                        <span style="font-size:.65rem;color:var(--cyan);font-variant-numeric:tabular-nums" id="mrpm-${m.id}">${m.rpm.toLocaleString()} RPM</span>
+                        <span class="badge-pill badge-${m.status.toLowerCase()}" id="mbadge-${m.id}">${m.status}</span>
+                    </div>
+                </div>
+                <div class="motor-bar-bg"><div class="motor-bar-fill" id="mbar-${m.id}" style="width:${pct}%"></div></div>
+                <div class="motor-stats">
+                    <div class="motor-stat"><div class="motor-stat-val" id="mcur-${m.id}">${m.cur.toFixed(1)} A</div><div class="motor-stat-lbl">Current</div></div>
+                    <div class="motor-stat"><div class="motor-stat-val" id="mvolt-${m.id}">${m.volt} V</div><div class="motor-stat-lbl">Voltage</div></div>
+                    <div class="motor-stat"><div class="motor-stat-val" id="mtemp-${m.id}">${m.temp}°C</div><div class="motor-stat-lbl">Temp</div></div>
+                    <div class="motor-stat"><div class="motor-stat-val" id="mpow-${m.id}">${m.pwr.toFixed(1)} kW</div><div class="motor-stat-lbl">Power</div></div>
+                </div>
+            </div>`);
+    });
+}
+function updateMotors() {
+    MOTORS.forEach(m => {
+        if (m.status === 'STOP') return;
+        m.rpm  = clamp(m.rpm  + rnd(-50, 50),   200, m.rpmMax);
+        m.cur  = clamp(m.cur  + rnd(-0.6, 0.6),   1, 25);
+        m.temp = clamp(m.temp + rnd(-0.5, 0.6),  30, 90);
+        m.pwr  = (m.rpm / m.rpmMax) * 11 * rnd(0.85, 1.0);
+        document.getElementById(`mrpm-${m.id}`).textContent  = Math.round(m.rpm).toLocaleString() + ' RPM';
+        document.getElementById(`mbar-${m.id}`).style.width  = (m.rpm / m.rpmMax * 100) + '%';
+        document.getElementById(`mcur-${m.id}`).textContent  = m.cur.toFixed(1) + ' A';
+        document.getElementById(`mtemp-${m.id}`).textContent = Math.round(m.temp) + '°C';
+        document.getElementById(`mpow-${m.id}`).textContent  = m.pwr.toFixed(1) + ' kW';
+    });
+}
+
+// ── IOT CHART ─────────────────────────────────────────────
+const iotLabels = [], iotOPC = [], iotMQT = [];
+for (let i = 29; i >= 0; i--) {
+    const t = new Date(Date.now() - i * 2000);
+    iotLabels.push([t.getHours(),t.getMinutes(),t.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':'));
+    iotOPC.push(rnd(800, 1600)); iotMQT.push(rnd(200, 600));
+}
+const iCtx = document.getElementById('iotChart').getContext('2d');
+const iotChart = new Chart(iCtx, {
+    type: 'line',
+    data: {
+        labels: [...iotLabels],
+        datasets: [
+            { label:'OPC-UA pts/s', data:[...iotOPC], borderColor:C.cyan,   backgroundColor:C.cyan+'22',  borderWidth:2, fill:true,  tension:0.4, pointRadius:0 },
+            { label:'MQTT pts/s',   data:[...iotMQT], borderColor:C.purple, backgroundColor:'transparent', borderWidth:2, fill:false, tension:0.4, pointRadius:0, borderDash:[5,3] },
+        ]
+    },
+    options: {
+        responsive:true, maintainAspectRatio:false, animation:{duration:0},
+        plugins:{ legend:{display:false}, tooltip:TT },
+        scales:{
+            x:{ grid:{color:C.grid}, ticks:{color:C.tick,font:{size:9},maxTicksLimit:5}, border:{color:'transparent'} },
+            y:{ grid:{color:C.grid}, ticks:{color:C.tick,font:{size:9}},                border:{color:'transparent'} },
+        }
+    }
+});
+function pushIoTPoint() {
+    const now = new Date();
+    iotLabels.push([now.getHours(),now.getMinutes(),now.getSeconds()].map(v=>String(v).padStart(2,'0')).join(':'));
+    iotOPC.push(clamp(iotOPC[iotOPC.length-1] + rnd(-150,150), 200, 2200));
+    iotMQT.push(clamp(iotMQT[iotMQT.length-1] + rnd(-80, 80),  50, 900));
+    if (iotLabels.length > 30) { iotLabels.shift(); iotOPC.shift(); iotMQT.shift(); }
+    iotChart.data.labels             = [...iotLabels];
+    iotChart.data.datasets[0].data   = [...iotOPC];
+    iotChart.data.datasets[1].data   = [...iotMQT];
+    iotChart.update('none');
+}
+
+// ── DEVICE STATUS GRID ────────────────────────────────────
+const DEV_NAMES = [
+    'PLC-01','PLC-02','SRV-01','SRV-02','SRV-03','SRV-04',
+    'MOT-01','MOT-02','MOT-03','CNC-07','HMI-01','HMI-02',
+    'RTU-01','RTU-02','RTU-03','SEN-01','SEN-02','SEN-03',
+    'SEN-04','SEN-05','CAM-01','CAM-02','GW-01','GW-02','UPS-01','UPS-02'
+];
+const devStates = Array(26).fill('online');
+devStates[14] = 'offline'; devStates[21] = 'offline'; devStates[9] = 'warn';
+function buildDevGrid() {
+    const g = document.getElementById('dev-grid');
+    DEV_NAMES.forEach((name, i) => g.insertAdjacentHTML('beforeend',
+        `<div class="dev-sq ${devStates[i]}" id="dsq-${i}" title="${name}">${i+1}</div>`));
+}
+
+// ── EVENT LOG ─────────────────────────────────────────────
+const EVENTS = [
+    { type:'alarm', icon:'⛔', msg:'SRV-03 Temp alta: 74°C',               src:'ALARM_01' },
+    { type:'warn',  icon:'⚠️', msg:'CNC-07 Tool wear >40%',                src:'WARN_02'  },
+    { type:'warn',  icon:'⚠️', msg:'PLC scan time 4.8 ms',                 src:'WARN_03'  },
+    { type:'info',  icon:'ℹ️', msg:'OPC-UA reconectado al servidor',        src:'INFO_01'  },
+    { type:'ok',    icon:'✅', msg:'MOT-01 operando dentro de parámetros',  src:'OK_01'    },
+    { type:'info',  icon:'ℹ️', msg:'Backup PLC completado exitosamente',    src:'INFO_02'  },
+    { type:'alarm', icon:'⛔', msg:'Presión baja detectada: 2.1 bar',       src:'ALARM_02' },
+    { type:'ok',    icon:'✅', msg:'CNC-07 programa O0042 iniciado',        src:'OK_02'    },
+    { type:'warn',  icon:'⚠️', msg:'SEN-03 lectura fuera de rango',         src:'WARN_04'  },
+    { type:'info',  icon:'ℹ️', msg:'MQTT broker ping OK 8 ms',              src:'INFO_03'  },
+    { type:'ok',    icon:'✅', msg:'Nivel de refrigerante OK',               src:'OK_03'    },
+    { type:'alarm', icon:'⛔', msg:'Vibración anormal SEN-02: 6.8 mm/s',    src:'ALARM_03' },
+];
+let eventIdx = 0;
+function addEvent() {
+    const e   = EVENTS[eventIdx++ % EVENTS.length];
+    const now = ts();
+    const item = document.createElement('div');
+    item.className = 'event-item';
+    item.innerHTML = `
+        <span class="event-icon">${e.icon}</span>
+        <div>
+            <div class="event-msg ev-${e.type}">${e.msg}</div>
+            <div class="event-src">${e.src}</div>
+        </div>
+        <span class="event-time">${now}</span>`;
+    const log = document.getElementById('event-log');
+    log.insertBefore(item, log.firstChild);
+    while (log.children.length > 8) log.removeChild(log.lastChild);
+    // keep alarm badge in sync
+    const cnt = [...log.querySelectorAll('.ev-alarm')].length;
+    document.getElementById('alarm-count').textContent = cnt;
+    document.getElementById('kv-alarms').textContent   = cnt;
+}
+
+// ── BOOT ──────────────────────────────────────────────────
+buildPLC();
+buildServos();
+buildMotors();
+buildDevGrid();
+for (let i = 0; i < 5; i++) addEvent();
+updateKPIs();
+updateCNC();
+updateServos();
+updatePLC();
+updateMotors();
+
+// ── INTERVALS ─────────────────────────────────────────────
+setInterval(() => {
+    updateKPIs();
+    updateCNC();
+    updateServos();
+    updatePLC();
+    updateMotors();
+    pushProdPoint();
+    pushIoTPoint();
+}, 2000);
+setInterval(addEvent, 4000);
+</script>
+</body>
+</html>
